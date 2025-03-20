@@ -29,7 +29,8 @@ Navigate to your Isaac Sim installation directory in the terminal and execute:
 
 Replace <PATH_TO_SCRIPT> with the actual path to your softRobot.py file.
 
-Running the Simulation:
+![alt](figs/fig.gif)
+# Running the Simulation:
 
 The simulation visualizes a soft robotic structure dynamically responding to sinusoidal input signals.
 
