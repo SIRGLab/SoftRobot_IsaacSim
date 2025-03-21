@@ -106,48 +106,60 @@ class sfr(nn.Module):
         indices = np.linspace(0, n - 1, m, dtype=int)  # Linearly spaced indices
         return arr[indices]
 
+class Simulation:
+    def __init__(self,numb_sphere = 30) -> None:
+        self.num_sphere = numb_sphere
+
+        self.simulation_app = SimulationApp({"headless": False})
+
+        from isaacsim.core.api import World
+        self.my_world = World(stage_units_in_meters=1.0)
+    
+        self.num_sphere = 30
+    def create_robot(self):
+        from isaacsim.core.api.objects import DynamicCuboid, VisualCuboid, VisualSphere
+
+        for i in range(self.num_sphere):
+            self.my_world.scene.add(
+                VisualSphere(
+                    prim_path="/sphere"+str(i),
+                    name="visual_sphere"+str(i),
+                    position=np.array([0, 0, 0.5]),
+                    radius=0.01 if i != self.num_sphere-1 else 0.02,
+                    color=np.array([255, 0, 255]) if i != self.num_sphere-1 else np.array([0, 255, 0]),
+                )
+            )
+
+    def reset(self):
+        self.my_world.scene.add_default_ground_plane()
+        self.my_world.reset()
+        self.t  = self.my_world.current_time
+        
+        
+
 
 robot = sfr().to(device)
-num_sphere = 30
+sim = Simulation(numb_sphere=30)
+sim.create_robot()
+sim.reset()
 
-simulation_app = SimulationApp({"headless": False})
-
-from isaacsim.core.api import World
-from isaacsim.core.api.objects import DynamicCuboid, VisualCuboid, VisualSphere
-
-
-my_world = World(stage_units_in_meters=1.0)
-
-for i in range(num_sphere):
-    my_world.scene.add(
-        VisualSphere(
-            prim_path="/sphere"+str(i),
-            name="visual_sphere"+str(i),
-            position=np.array([0, 0, 0.5]),
-            radius=0.01 if i != num_sphere-1 else 0.02,
-            color=np.array([255, 0, 255]) if i != num_sphere-1 else np.array([0, 255, 0]),
-        )
-    )
-    
-my_world.scene.add_default_ground_plane()
-my_world.reset()
-t  = my_world.current_time
-while simulation_app.is_running():   
-    if my_world.is_playing():    
+t  = sim.my_world.current_time
+while sim.simulation_app.is_running():   
+    if sim.my_world.is_playing():    
         w  = 2*np.pi
-        t +=  my_world.current_time - t
+        t +=  sim.my_world.current_time - t
         actions = torch.tensor([[0.0, 0.005*np.sin(w*t), 0.0, 
                                 0.0, 0.005*np.sin(w*t), 0.0,
                                 0.0, 0.005*np.sin(w*t), 0.0]], device=device).reshape(1, 9)
         robot.updateAction(actions)
         sol = robot.odeStepFull(actions)
-        sol = robot.downsample_simple(sol, num_sphere).detach().cpu().numpy()
+        sol = robot.downsample_simple(sol, sim.num_sphere).detach().cpu().numpy()
         
-        for i in range(num_sphere):
-            sphere = my_world.scene.get_object("visual_sphere"+str(i))
+        for i in range(sim.num_sphere):
+            sphere = sim.my_world.scene.get_object("visual_sphere"+str(i))
             new_position = sol[i, 0, :3]
             sphere.set_world_pose(position=new_position)
             
-        my_world.step(render=True)
+        sim.my_world.step(render=True)
 
-simulation_app.close()
+sim.simulation_app.close()
