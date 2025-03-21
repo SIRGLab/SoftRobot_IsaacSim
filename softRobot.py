@@ -2,9 +2,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.init as init
+import torch.nn.functional as F
+
 
 from torchdiffeq import odeint  # Ensure you have torchdiffeq installed
-import matplotlib.pyplot as plt
 import numpy as np
 
 from isaacsim import SimulationApp
@@ -141,7 +142,7 @@ while simulation_app.is_running():
         robot.updateAction(actions)
         sol = robot.odeStepFull(actions)
         sol = robot.downsample_simple(sol, num_sphere).detach().cpu().numpy()
-
+        
         for i in range(num_sphere):
             sphere = my_world.scene.get_object("visual_sphere"+str(i))
             new_position = sol[i, 0, :3]

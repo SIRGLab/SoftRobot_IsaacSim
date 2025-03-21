@@ -14,18 +14,25 @@ Ensure the following libraries are installed:
 - torch
 - torchdiffeq
 - numpy
-- matplotlib
 - isaacsim (NVIDIA Isaac Sim)
 
 # Installation:
 
 To install the necessary Python libraries, run:
 
+`
+pip install torch torchdiffeq numpy
+`
+
 Make sure NVIDIA Isaac Sim is properly installed and configured. For Isaac Sim installation instructions, refer to the official NVIDIA Isaac Sim documentation.
 
 # How to Run:
 
 Navigate to your Isaac Sim installation directory in the terminal and execute:
+
+`
+./python.sh <PATH_TO_SCRIPT>/softRobot.py
+`
 
 Replace <PATH_TO_SCRIPT> with the actual path to your softRobot.py file.
 
