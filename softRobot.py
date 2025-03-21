@@ -134,8 +134,6 @@ class Simulation:
         self.my_world.scene.add_default_ground_plane()
         self.my_world.reset()
         self.t  = self.my_world.current_time
-        
-        
 
 
 robot = sfr().to(device)
