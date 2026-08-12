@@ -1,17 +1,46 @@
+import argparse
+import math
 
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.init as init
-import torch.nn.functional as F
-
-
 from torchdiffeq import odeint  # Ensure you have torchdiffeq installed
-import numpy as np
-
-from isaacsim import SimulationApp
 
 
 device = torch.device('cuda:' + str(0) if torch.cuda.is_available() else 'cpu')
+
+
+def positive_int(value):
+    value = int(value)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run batched soft robots in Isaac Sim.")
+    parser.add_argument(
+        "--env_num",
+        "--num_envs",
+        dest="env_num",
+        type=positive_int,
+        default=1,
+        help="Number of soft-robot environments to create (default: 1).",
+    )
+    parser.add_argument(
+        "--env_spacing",
+        type=float,
+        default=0.4,
+        help="Spacing in metres between environment origins (default: 0.4).",
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run Isaac Sim without opening a window.",
+    )
+    args, _ = parser.parse_known_args()
+    return args
+
 
 class sfr(nn.Module):
     def __init__(self) -> None:
@@ -106,29 +135,63 @@ class sfr(nn.Module):
         indices = np.linspace(0, n - 1, m, dtype=int)  # Linearly spaced indices
         return arr[indices]
 
-class Simulation:
-    def __init__(self,numb_sphere = 30) -> None:
-        self.num_sphere = numb_sphere
 
-        self.simulation_app = SimulationApp({"headless": False})
+class Simulation:
+    def __init__(self, num_sphere=30, env_num=1, env_spacing=0.4, headless=False) -> None:
+        from isaacsim import SimulationApp
+
+        self.num_sphere = num_sphere
+        self.env_num = env_num
+        self.env_spacing = env_spacing
+        self.sphere_names = []
+
+        self.simulation_app = SimulationApp({"headless": headless})
 
         from isaacsim.core.api import World
         self.my_world = World(stage_units_in_meters=1.0)
-    
-        self.num_sphere = 30
-    def create_robot(self):
-        from isaacsim.core.api.objects import DynamicCuboid, VisualCuboid, VisualSphere
 
-        for i in range(self.num_sphere):
-            self.my_world.scene.add(
-                VisualSphere(
-                    prim_path="/sphere"+str(i),
-                    name="visual_sphere"+str(i),
-                    position=np.array([0, 0, 0.5]),
-                    radius=0.01 if i != self.num_sphere-1 else 0.02,
-                    color=np.array([255, 0, 255]) if i != self.num_sphere-1 else np.array([0, 255, 0]),
+    def _environment_origins(self):
+        """Lay environments out on a centred square grid."""
+        columns = math.ceil(math.sqrt(self.env_num))
+        rows = math.ceil(self.env_num / columns)
+        x_center = (columns - 1) / 2.0
+        y_center = (rows - 1) / 2.0
+
+        return np.array(
+            [
+                [
+                    (env_id % columns - x_center) * self.env_spacing,
+                    (env_id // columns - y_center) * self.env_spacing,
+                    0.0,
+                ]
+                for env_id in range(self.env_num)
+            ],
+            dtype=np.float32,
+        )
+
+    def create_robot(self):
+        from isaacsim.core.api.objects import VisualSphere
+
+        self.env_origins = self._environment_origins()
+        for env_id, origin in enumerate(self.env_origins):
+            environment_spheres = []
+            for sphere_id in range(self.num_sphere):
+                name = f"visual_sphere_{env_id}_{sphere_id}"
+                self.my_world.scene.add(
+                    VisualSphere(
+                        prim_path=f"/World/envs/env_{env_id}/sphere_{sphere_id}",
+                        name=name,
+                        position=origin + np.array([0.0, 0.0, 0.5]),
+                        radius=0.01 if sphere_id != self.num_sphere - 1 else 0.02,
+                        color=(
+                            np.array([255, 0, 255])
+                            if sphere_id != self.num_sphere - 1
+                            else np.array([0, 255, 0])
+                        ),
+                    )
                 )
-            )
+                environment_spheres.append(name)
+            self.sphere_names.append(environment_spheres)
 
     def reset(self):
         self.my_world.scene.add_default_ground_plane()
@@ -136,28 +199,47 @@ class Simulation:
         self.t  = self.my_world.current_time
 
 
-robot = sfr().to(device)
-sim = Simulation(numb_sphere=30)
-sim.create_robot()
-sim.reset()
+def main():
+    args = parse_args()
+    robot = sfr().to(device)
+    sim = Simulation(
+        num_sphere=30,
+        env_num=args.env_num,
+        env_spacing=args.env_spacing,
+        headless=args.headless,
+    )
 
-t  = sim.my_world.current_time
-while sim.simulation_app.is_running():   
-    if sim.my_world.is_playing():    
-        w  = 2*np.pi
-        t +=  sim.my_world.current_time - t
-        actions = torch.tensor([[0.0, 0.005*np.sin(w*t), 0.0, 
-                                0.0, 0.005*np.sin(w*t), 0.0,
-                                0.0, 0.005*np.sin(w*t), 0.0]], device=device).reshape(1, 9)
-        robot.updateAction(actions)
-        sol = robot.odeStepFull(actions)
-        sol = robot.downsample_simple(sol, sim.num_sphere).detach().cpu().numpy()
-        
-        for i in range(sim.num_sphere):
-            sphere = sim.my_world.scene.get_object("visual_sphere"+str(i))
-            new_position = sol[i, 0, :3]
-            sphere.set_world_pose(position=new_position)
-            
-        sim.my_world.step(render=True)
+    try:
+        sim.create_robot()
+        sim.reset()
+        phase = torch.arange(args.env_num, device=device) * 0.2
+        actions = torch.zeros((args.env_num, 9), device=device)
 
-sim.simulation_app.close()
+        while sim.simulation_app.is_running():
+            if sim.my_world.is_playing():
+                t = sim.my_world.current_time
+                w = 2 * np.pi
+
+                # One row per environment. A small phase offset makes it easy to
+                # see that every environment is being updated independently.
+                sine_wave = torch.sin(w * t + phase)
+                actions[:, 1] = 0.005 * sine_wave
+                actions[:, 4] = 0.005 * sine_wave
+                actions[:, 7] = 0.005 * sine_wave
+
+                sol = robot.odeStepFull(actions)
+                sol = robot.downsample_simple(sol, sim.num_sphere).detach().cpu().numpy()
+
+                for env_id, origin in enumerate(sim.env_origins):
+                    for sphere_id, sphere_name in enumerate(sim.sphere_names[env_id]):
+                        sphere = sim.my_world.scene.get_object(sphere_name)
+                        position = sol[sphere_id, env_id, :3] + origin
+                        sphere.set_world_pose(position=position)
+
+                sim.my_world.step(render=not args.headless)
+    finally:
+        sim.simulation_app.close()
+
+
+if __name__ == "__main__":
+    main()

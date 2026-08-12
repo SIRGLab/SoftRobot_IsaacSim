@@ -36,6 +36,16 @@ Navigate to your Isaac Sim installation directory in the terminal and execute:
 
 Replace <PATH_TO_SCRIPT> with the actual path to your softRobot.py file.
 
+To run several soft robots in parallel, pass the number of environments with
+`--env_num` (the Isaac Lab-style `--num_envs` spelling is also accepted):
+
+`
+./python.sh <PATH_TO_SCRIPT>/softRobot.py --env_num 8
+`
+
+Use `--env_spacing 0.6` to change the spacing between robots, or `--headless`
+to run without the Isaac Sim window.
+
 ![alt](figs/fig.gif)
 # Running the Simulation:
 
@@ -50,4 +60,3 @@ Adjust the actions tensor to customize robot control signals and behaviors.
 Modify the parameters like segment length (l0), cable offset (d), and ODE time steps (ds) in the sfr class to suit your application.
 
 Enjoy experimenting with soft robot dynamics!
-
